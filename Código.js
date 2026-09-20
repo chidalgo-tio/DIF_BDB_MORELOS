@@ -168,3 +168,76 @@ function probarFecha() {
   Logger.log(resultado);
   Logger.log(resultado.toString());
 }
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Diferencias BDB")
+    .addItem("Actualizar diferencias", "actualizarDiferencias")
+    .addItem("Generar gráfica de diferencias", "generarGraficaDiferencias")
+    .addToUi();
+}
+
+function generarGraficaDiferencias() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const datos = ss.getSheetByName("DATOS");
+  if (!datos) throw new Error("No existe la pestaña DATOS");
+
+  const ultimaFila = datos.getLastRow();
+  if (ultimaFila < 2) {
+    SpreadsheetApp.getUi().alert("No hay datos en la pestaña DATOS para graficar.");
+    return;
+  }
+
+  const estatusValores = datos.getRange(2, 3, ultimaFila - 1, 1).getValues();
+
+  const conteo = {};
+  let total = 0;
+  estatusValores.forEach(fila => {
+    const estatus = String(fila[0]).trim();
+    if (!estatus || esValorError(estatus)) return;
+    conteo[estatus] = (conteo[estatus] || 0) + 1;
+    total++;
+  });
+
+  if (total === 0) {
+    SpreadsheetApp.getUi().alert("No hay estatus válidos para graficar.");
+    return;
+  }
+
+  let hojaResumen = ss.getSheetByName("Resumen Gráfica");
+  if (hojaResumen) {
+    hojaResumen.getCharts().forEach(chart => hojaResumen.removeChart(chart));
+    hojaResumen.clearContents();
+  } else {
+    hojaResumen = ss.insertSheet("Resumen Gráfica");
+  }
+
+  hojaResumen.getRange(1, 1, 1, 3).setValues([["Estatus", "Cantidad", "Porcentaje"]]);
+
+  const filas = Object.keys(conteo).sort().map(estatus => {
+    const cantidad = conteo[estatus];
+    return [estatus, cantidad, cantidad / total];
+  });
+
+  hojaResumen.getRange(2, 1, filas.length, 3).setValues(filas);
+  hojaResumen.getRange(2, 3, filas.length, 1).setNumberFormat("0.0%");
+
+  const rangoDatos = hojaResumen.getRange(1, 1, filas.length + 1, 2);
+
+  const chart = hojaResumen.newChart()
+    .setChartType(Charts.ChartType.PIE)
+    .addRange(rangoDatos)
+    .setPosition(2, 5, 0, 0)
+    .setOption("title", "Porcentaje de diferencias encontradas: BDB Meli vs Montemorelos")
+    .setOption("pieHole", 0.4)
+    .setOption("width", 600)
+    .setOption("height", 400)
+    .build();
+
+  hojaResumen.insertChart(chart);
+  ss.setActiveSheet(hojaResumen);
+
+  SpreadsheetApp.getUi().alert(
+    total + " diferencia(s) clasificada(s) en " + Object.keys(conteo).length + " tipo(s) de estatus."
+  );
+}
